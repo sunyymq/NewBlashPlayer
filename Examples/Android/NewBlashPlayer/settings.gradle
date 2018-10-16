@@ -1,0 +1,5 @@
+include ':app'
+
+//include the android nbmeidaplayer
+include ':nbmediaplayer'
+project(':nbmediaplayer').projectDir = new File(settingsDir, '../../../NBMediaPlayer/platform/Android')
