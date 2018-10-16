@@ -2,7 +2,6 @@
 #define DE_BASE_TASK_H
 
 #include "common_def.h"
-#include "utils/DEAny.h"
 #include <NBString.h>
 #include <NBList.h>
 

@@ -3,10 +3,10 @@
 
 #include "DEInternal.h"
 
-typedef DEAny ParamsType;
+typedef void ParamsType;
 
 static ParamsType* paramsCreate(int numVal) {
-    return new ParamsType[numVal];
+    return new char[sizeof(void*)*numVal];
 }
 
 static void paramsDestroy(const ParamsType* params) {
@@ -16,12 +16,28 @@ static void paramsDestroy(const ParamsType* params) {
     delete []params;
 }
 
-static void paramsSetAtIndex(ParamsType* params, int index, const ParamsType& param) {
-    params[index] = param;
+static void paramsSetInt32At(ParamsType* params, int index, const int32_t param) {
+    *(int32_t*)(&((char*)params)[index*sizeof(void*)]) = param;
 }
 
-static const ParamsType& paramsGetAtIndex(const ParamsType* params, int index) {
-    return params[index];
+static void paramsSetInt64At(ParamsType* params, int index, const int64_t param) {
+    *(int64_t*)(&((char*)params)[index*sizeof(void*)]) = param;
+}
+
+static void paramsSetPointerAt(ParamsType* params, int index, const void* param) {
+    *(void**)(&((char*)params)[index*sizeof(void*)]) = (void*)param;
+}
+
+static const int32_t paramsGetInt32At(const ParamsType* params, int index) {
+    return *(int32_t*)(&((char*)params)[index*sizeof(void*)]);
+}
+
+static const int64_t paramsGetInt64At(const ParamsType* params, int index) {
+    return *(int64_t*)(&((char*)params)[index*sizeof(void*)]);
+}
+
+static const void* paramsGetPointerAt(const ParamsType* params, int index) {
+    return *(void**)(&((char*)params)[index*sizeof(void*)]);
 }
 
 //Looper Class

@@ -21,8 +21,8 @@ android {
         externalNativeBuild {
             // Encapsulates your CMake build configurations.
             cmake {
-                // Sets optional flags for the C++ compiler.
-                cppFlags "-fexceptions", "-frtti"
+//                // Sets optional flags for the C++ compiler.
+//                cppFlags "-fexceptions", "-frtti"
             }
         }
 

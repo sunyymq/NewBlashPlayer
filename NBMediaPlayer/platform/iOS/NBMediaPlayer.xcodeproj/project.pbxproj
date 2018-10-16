@@ -311,7 +311,6 @@
 		FA969001215DE39F00F77705 /* DECurlHttpTask.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DECurlHttpTask.h; sourceTree = "<group>"; };
 		FA969002215DE39F00F77705 /* DECurlTask.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DECurlTask.cpp; sourceTree = "<group>"; };
 		FA969003215DE39F00F77705 /* DECurlTask.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DECurlTask.h; sourceTree = "<group>"; };
-		FA969005215DE39F00F77705 /* DEAny.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DEAny.h; sourceTree = "<group>"; };
 		FA969006215DE39F00F77705 /* DELRUCache.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DELRUCache.h; sourceTree = "<group>"; };
 		FA969011215E71DA00F77705 /* NBSet.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NBSet.h; sourceTree = "<group>"; };
 		FAF61DB5216F1C1400C85F54 /* rtp.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rtp.c; sourceTree = "<group>"; };
@@ -878,7 +877,6 @@
 		FA969004215DE39F00F77705 /* utils */ = {
 			isa = PBXGroup;
 			children = (
-				FA969005215DE39F00F77705 /* DEAny.h */,
 				FA969006215DE39F00F77705 /* DELRUCache.h */,
 			);
 			path = utils;

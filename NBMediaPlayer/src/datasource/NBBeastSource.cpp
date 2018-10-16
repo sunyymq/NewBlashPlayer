@@ -27,20 +27,25 @@ extern "C" {
 
 NBBeastSource::NBBeastSource(const NBString& uri)
 :mUri(uri)
+,mFormatCtx(NULL)
 ,mIOCtx(NULL)
 ,mCacheBuffer(NULL) {
-    
+    // download engine init
+    download_engine_init(NULL, 0);
 }
 
 NBBeastSource::~NBBeastSource() {
-    NBLOG_INFO(LOG_TAG, "nb data source closing : %p", mIOCtx);
+    NBLOG_INFO(LOG_TAG, "nb data source closing : %p", mFormatCtx);
     if (mIOCtx != NULL) {
         avio_context_free(&mIOCtx);
     }
     
-//    if (mCacheBuffer != NULL) {
-//        av_free(mCacheBuffer);
-//    }
+    if (mFormatCtx != NULL) {
+        avformat_close_input(&mFormatCtx);
+    }
+    
+    // download engine uninit
+    download_engine_uninit();
 }
 
 void NBBeastSource::RegisterSource() {
@@ -278,6 +283,10 @@ nb_status_t NBBeastSource::initCheck(const NBMap<NBString, NBString>* params) {
     if (mIOCtx == NULL) {
         return UNKNOWN_ERROR;
     }
+    
+    mFormatCtx = avformat_alloc_context();
+    mFormatCtx->pb = mIOCtx;
+    mFormatCtx->interrupt_callback = interrupt_callback;
     
 //    if ((rc = avio_open2(&mIOCtx, mUri.string(), AVIO_FLAG_READ, &interrupt_callback, &openDict))) {
 //        char errbuf[AV_ERROR_MAX_STRING_SIZE] = { 0 };

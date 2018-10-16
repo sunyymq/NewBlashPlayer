@@ -281,7 +281,7 @@ size_t DEBaseTask::processOutputData(void *ptr, size_t size, size_t nmemb, void 
         }
 
         if (task_priv->task_download_write_pos == task_priv->task_end_off) {
-            assert(task_priv->received_index == 0);
+//            assert(task_priv->received_index == 0);
         }
     }
 

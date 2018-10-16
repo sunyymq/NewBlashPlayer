@@ -25,10 +25,10 @@
     // Do any additional setup after loading the view from its nib.
     
     _nbAVPlayer = [[NBAVPlayer alloc] init];
-    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"/Users/liuenbao/Desktop/SharedFiles/DAS0N1_Good_Bye.mp4"] params:nil];
+//    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"/Users/liuenbao/Desktop/SharedFiles/DAS0N1_Good_Bye.mp4"] params:nil];
 //    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"/Users/liuenbao/Desktop/SharedFiles/LoveTheWayYouLie.mp3"] params:nil];
 //    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"/Users/liuenbao/Desktop/SharedFiles/The_Innocents_01_01.mp4"] params:nil];
-//    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"http://127.0.0.1:8989/The_Innocents_01_01.mp4"] params:nil];
+    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"http://127.0.0.1:8989/The_Innocents_01_01.mp4"] params:nil];
 //    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"rtmp://127.0.0.1/live/sallar"] params:nil];
 //    [_nbAVPlayer setDataSource:[NSURL URLWithString:@"rtsp://127.0.0.1:8554/Friends.mkv"] params:nil];
     [_nbAVPlayer setVideoOutput:_nbGLView];

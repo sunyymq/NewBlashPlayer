@@ -137,10 +137,10 @@ void download_engine_create_command(void* user_data, const ParamsType* params) {
     DEBaseTask* task_item = NULL;
     DOWNLOAD_ENGINE* download_engine = (DOWNLOAD_ENGINE*)user_data;
 
-    int* p_task_id = AnyCast<int*>(paramsGetAtIndex(params, 0));
-    CREATE_TASK_PARAMS* task_params = AnyCast<CREATE_TASK_PARAMS*>(paramsGetAtIndex(params, 1));
-    download_engine_callback callback = AnyCast<download_engine_callback>(paramsGetAtIndex(params, 2));
-    void* callback_opaque = AnyCast<void*>(paramsGetAtIndex(params, 3));
+    int* p_task_id = (int*)paramsGetPointerAt(params, 0);
+    CREATE_TASK_PARAMS* task_params = (CREATE_TASK_PARAMS*)paramsGetPointerAt(params, 1);
+    download_engine_callback callback = (download_engine_callback)paramsGetPointerAt(params, 2);
+    void* callback_opaque = (void*)paramsGetPointerAt(params, 3);
 
     // task_item = download_engine_get_task_by_create_params(download_engine, task_params);
     // //If all realy in task map
@@ -192,10 +192,10 @@ int download_engine_create_task(const CREATE_TASK_PARAMS* task_params, download_
     int task_id;
 
     ParamsType* params = paramsCreate(4);
-    paramsSetAtIndex(params, 0, DEAny(&task_id));
-    paramsSetAtIndex(params, 1, DEAny(new CREATE_TASK_PARAMS(*task_params)));
-    paramsSetAtIndex(params, 2, DEAny(callback));
-    paramsSetAtIndex(params, 3, DEAny(user_data));
+    paramsSetPointerAt(params, 0, &task_id);
+    paramsSetPointerAt(params, 1, new CREATE_TASK_PARAMS(*task_params));
+    paramsSetPointerAt(params, 2, (void*)callback);
+    paramsSetPointerAt(params, 3, user_data);
 
     g_download_engine->main_looper->postCommandSyncImediately(params, download_engine_create_command, g_download_engine);
 
@@ -207,9 +207,7 @@ int download_engine_create_task(const CREATE_TASK_PARAMS* task_params, download_
 void download_engine_destroy_command(void* user_data, const ParamsType* params) {
     DOWNLOAD_ENGINE* download_engine = (DOWNLOAD_ENGINE*)user_data;
 
-    const DEAny& anyValue = paramsGetAtIndex(params, 0);
-
-    int task_id = AnyCast<int>(anyValue);
+    int task_id = paramsGetInt32At(params, 0);
 
     DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, task_id);
 
@@ -231,8 +229,8 @@ void download_engine_destroy_task(int task_id) {
         return;
     }
 
-    ParamsType* params = paramsCreate(2);
-    paramsSetAtIndex(params, 0, DEAny(task_id));
+    ParamsType* params = paramsCreate(1);
+    paramsSetInt32At(params, 0, task_id);
 
     g_download_engine->main_looper->postCommandSyncImediately(params, download_engine_destroy_command, g_download_engine);
 }
@@ -240,9 +238,7 @@ void download_engine_destroy_task(int task_id) {
 void download_engine_start_command(void* user_data, const ParamsType* params) {
     DOWNLOAD_ENGINE* download_engine = (DOWNLOAD_ENGINE*)user_data;
 
-    const DEAny& anyValue = paramsGetAtIndex(params, 0);
-
-    int task_id = AnyCast<int>(anyValue);
+    int task_id = paramsGetInt32At(params, 0);
 
     DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, task_id);
 
@@ -257,7 +253,7 @@ int download_engine_start_task(int task_id) {
     }
 
     ParamsType* params = paramsCreate(1);
-    paramsSetAtIndex(params, 0, DEAny(task_id));
+    paramsSetInt32At(params, 0, task_id);
 
     return g_download_engine->main_looper->postCommandAsyncImediately(params, download_engine_start_command, g_download_engine);
 }
@@ -265,7 +261,7 @@ int download_engine_start_task(int task_id) {
 void download_engine_stop_command(void* user_data, const ParamsType* params) {
     DOWNLOAD_ENGINE* download_engine = (DOWNLOAD_ENGINE*)user_data;
 
-    int task_id = AnyCast<int>(paramsGetAtIndex(params, 0));
+    int task_id = paramsGetInt32At(params, 0);
 
     DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, task_id);
 
@@ -280,7 +276,7 @@ int download_engine_stop_task(int task_id) {
     }
 
     ParamsType* params = paramsCreate(1);
-    paramsSetAtIndex(params, 0, DEAny(task_id));
+    paramsSetInt32At(params, 0, task_id);
 
     g_download_engine->main_looper->postCommandSyncImediately(params, download_engine_stop_command, g_download_engine);
 
@@ -290,9 +286,10 @@ int download_engine_stop_task(int task_id) {
 void download_engine_get_task_size_command(void* user_data, const ParamsType* params) {
     DOWNLOAD_ENGINE* download_engine = (DOWNLOAD_ENGINE*)user_data;
 
-    int64_t* p_task_size = AnyCast<int64_t*>(paramsGetAtIndex(params, 1));
+    int32_t task_id = paramsGetInt32At(params, 0);
+    int64_t* p_task_size = (int64_t*)paramsGetPointerAt(params, 1);
 
-    DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, AnyCast<int>(paramsGetAtIndex(params, 0)));
+    DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, task_id);
 
     *p_task_size = task_item->getTaskSize();
     
@@ -307,8 +304,8 @@ int64_t download_engine_get_task_size(int task_id) {
     int64_t task_size = -1;
 
     ParamsType* params = paramsCreate(2);
-    paramsSetAtIndex(params, 0, DEAny(task_id));
-    paramsSetAtIndex(params, 1, DEAny(&task_size));
+    paramsSetInt32At(params, 0, task_id);
+    paramsSetPointerAt(params, 1, &task_size);
 
     g_download_engine->main_looper->postCommandSyncImediately(params, download_engine_get_task_size_command, g_download_engine);
 
@@ -318,14 +315,12 @@ int64_t download_engine_get_task_size(int task_id) {
 void download_engine_seek_command(void* user_data, const ParamsType* params) {
     DOWNLOAD_ENGINE* download_engine = (DOWNLOAD_ENGINE*)user_data;
 
-    int64_t *p_seeked_off = AnyCast<int64_t*>(paramsGetAtIndex(params, 3));
+    int32_t task_id = paramsGetInt32At(params, 0);
+    int64_t off = paramsGetInt64At(params, 1);
+    int whence = paramsGetInt32At(params, 2);
+    int64_t *p_seeked_off = (int64_t*)paramsGetPointerAt(params, 3);
 
-    int whence = AnyCast<int>(paramsGetAtIndex(params, 2));
-
-    DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, AnyCast<int>(paramsGetAtIndex(params, 0)));
-
-    int64_t off_at_begin = -1;
-    int64_t off = AnyCast<int64_t>(paramsGetAtIndex(params, 1));
+    DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, task_id);
     
     *p_seeked_off = task_item->seek(off, whence);
     
@@ -340,10 +335,10 @@ int64_t download_engine_seek_task(int task_id, int64_t off, int whence) {
     int64_t seeked_off = -1;
 
     ParamsType* params = paramsCreate(4);
-    paramsSetAtIndex(params, 0, DEAny(task_id));
-    paramsSetAtIndex(params, 1, DEAny(off));
-    paramsSetAtIndex(params, 2, DEAny(whence));
-    paramsSetAtIndex(params, 3, DEAny(&seeked_off));
+    paramsSetInt32At(params, 0, task_id);
+    paramsSetInt64At(params, 1, off);
+    paramsSetInt32At(params, 2, whence);
+    paramsSetPointerAt(params, 3, &seeked_off);
 
     g_download_engine->main_looper->postCommandSyncImediately(params, download_engine_seek_command, g_download_engine);
 
@@ -354,11 +349,12 @@ void download_engine_read_command(void* user_data, const ParamsType* params) {
 
     DOWNLOAD_ENGINE* download_engine = (DOWNLOAD_ENGINE*)user_data;
 
-    ssize_t* p_read_size = AnyCast<ssize_t*>(paramsGetAtIndex(params, 1));
-    void* buf = AnyCast<void*>(paramsGetAtIndex(params, 2));
-    size_t buf_size = AnyCast<size_t>(paramsGetAtIndex(params, 3));
+    int32_t task_id = paramsGetInt32At(params, 0);
+    ssize_t* p_read_size = (ssize_t*)paramsGetPointerAt(params, 1);
+    void* buf = (void*)paramsGetPointerAt(params, 2);
+    int32_t buf_size = paramsGetInt32At(params, 3);
 
-    DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, AnyCast<int>(paramsGetAtIndex(params, 0)));
+    DEBaseTask* task_item = download_engine_get_task_by_id(download_engine, task_id);
 
     int read_size = task_item->read(buf, buf_size);
 
@@ -375,10 +371,10 @@ ssize_t download_engine_read_task(int task_id, void* buf, size_t size) {
     ssize_t read_size = -1;
 
     ParamsType* params = paramsCreate(4);
-    paramsSetAtIndex(params, 0, DEAny(task_id));
-    paramsSetAtIndex(params, 1, DEAny(&read_size));
-    paramsSetAtIndex(params, 2, DEAny(buf));
-    paramsSetAtIndex(params, 3, DEAny(size));
+    paramsSetInt32At(params, 0, task_id);
+    paramsSetPointerAt(params, 1, &read_size);
+    paramsSetPointerAt(params, 2, buf);
+    paramsSetInt32At(params, 3, size);
 
     g_download_engine->main_looper->postCommandSyncImediately(params, download_engine_read_command, g_download_engine);
 

@@ -11,6 +11,7 @@
 
 #include "NBDataSource.h"
 
+struct AVFormatContext;
 struct AVIOContext;
 
 class NBBeastSource : public NBDataSource {
@@ -23,7 +24,7 @@ public:
     
     // return the current io context
     virtual void* getContext() {
-        return mIOCtx;
+        return mFormatCtx;
     }
     
     virtual NBString getUri() {
@@ -46,7 +47,10 @@ public:
     
 private:
     const NBString& mUri;
+    AVFormatContext* mFormatCtx;
     AVIOContext* mIOCtx;
+    
+private:
     uint8_t* mCacheBuffer;
     int mCacheBufferLen;
     int task_id;
