@@ -27,13 +27,10 @@ extern "C" {
 
 struct AVStream;
 struct AVFrame;
-struct AVBitStreamFilter;
-struct AVBSFContext;
 struct AVCodecContext;
 class AVCodecParameters;
 
-typedef struct SortedQueueItem SortedQueueItem;
-struct AVCodecParserContext;
+typedef struct HWAccelCtx HWAccelCtx;
 
 class NBVideoToolboxDecoder : public NBMediaSource {
 public:
@@ -73,11 +70,6 @@ public:
                              NBMediaBuffer **buffer, ReadOptions *options = NULL);
     
 private:
-    bool openVideoCodecContext(AVCodecParameters* codecpar);
-    
-//    float convertRawTimeToSeconds(int64_t rawTime);
-//    int64_t convertSecondsToRawTime(float secs);
-    
     static void DecompressionSessionCallback(void *decompressionOutputRefCon,
                                              void *sourceFrameRefCon,
                                              OSStatus status,
@@ -104,8 +96,6 @@ private:
     
     //let decoder recorder the pts
     DecoderRecorderPts mDecoderReorderPts;
-    
-    AVCodecParserContext* mVParser;
     AVCodecContext *mVCodecCxt;
     
     CMVideoFormatDescriptionRef mFormatDescription;
@@ -116,6 +106,12 @@ private:
     NBMutex mSortedLock;
     
     int mMaxRefFrames;
+    
+    HWAccelCtx* mHWAccelCtx;
+    
+private:
+    CMFormatDescriptionRef CreateFormatDescriptionFromCodecData(uint32_t format_id, int width, int height, AVCodecContext* codecCtx, uint32_t atom);
+    CFDataRef ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx);
     
 private:
     NBMetaData mMetaData;

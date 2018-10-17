@@ -35,6 +35,16 @@ struct SortedQueueItem {
     AVFrame frame;
 };
 
+typedef CMBlockBufferRef (*EncapsulateSampleBuffer)(HWAccelCtx* hwAccelCtx, AVPacket* videoPacket);
+
+struct HWAccelCtx {
+    int is_avc;
+    union {
+        H264ParamSets h264ps;
+    };
+    EncapsulateSampleBuffer encapsulateFunc;
+};
+
 static void DictSetString(CFMutableDictionaryRef dict, CFStringRef key, const char * value) {
     CFStringRef string;
     string = CFStringCreateWithCString(NULL, value, kCFStringEncodingASCII);
@@ -50,25 +60,37 @@ static void DictSetObject(CFMutableDictionaryRef dict, CFStringRef key, CFTypeRe
     CFDictionarySetValue(dict, key, value);
 }
 
+//static void DictSetData(CFMutableDictionaryRef dict, CFStringRef key, AVCodecContext *avctx) {
+//    CFDataRef data;
+////    data = CFDataCreate(NULL, value, (CFIndex)length);
+//    data = ff_videotoolbox_avcc_extradata_create(avctx);
+//    CFDictionarySetValue(dict, key, data);
+//    CFRelease(data);
+//}
+
+static void DictSetI32(CFMutableDictionaryRef dict, CFStringRef key, int32_t value) {
+    CFNumberRef number;
+    number = CFNumberCreate(NULL, kCFNumberSInt32Type, &value);
+    CFDictionarySetValue(dict, key, number);
+    CFRelease(number);
+}
+
 #define AV_W8(p, v) *(p) = (v)
 
-H264ParamSets ps = {0};
-int is_avc = 0;
-
-CFDataRef ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx)
+CFDataRef NBVideoToolboxDecoder::ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx)
 {
     int nal_length_size = 0;
 
-    ff_h264_decode_extradata(avctx->extradata, avctx->extradata_size, &ps, &is_avc, &nal_length_size, 0, avctx);
+    ff_h264_decode_extradata(avctx->extradata, avctx->extradata_size, &mHWAccelCtx->h264ps, &mHWAccelCtx->is_avc, &nal_length_size, 0, avctx);
 
     CFDataRef data = NULL;
     
-    if (is_avc) {
+    if (mHWAccelCtx->is_avc) {
         data = CFDataCreate(kCFAllocatorDefault, avctx->extradata, avctx->extradata_size);
     } else {
         /* currently active parameters sets */
-        const PPS *pps = (const PPS*)ps.pps_list[0]->data;
-        const SPS *sps = (const SPS*)ps.sps_list[0]->data;
+        const PPS *pps = (const PPS*)mHWAccelCtx->h264ps.pps_list[0]->data;
+        const SPS *sps = (const SPS*)mHWAccelCtx->h264ps.sps_list[0]->data;
         
         uint8_t *p;
         int vt_extradata_size = 6 + 2 + sps->data_size + 3 + pps->data_size;
@@ -101,22 +123,51 @@ CFDataRef ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx)
     return data;
 }
 
-static void DictSetData(CFMutableDictionaryRef dict, CFStringRef key, AVCodecContext *avctx) {
-    CFDataRef data;
-//    data = CFDataCreate(NULL, value, (CFIndex)length);
-    data = ff_videotoolbox_avcc_extradata_create(avctx);
-    CFDictionarySetValue(dict, key, data);
-    CFRelease(data);
+CMBlockBufferRef H264EncapsulateSampleBuffer(HWAccelCtx* hwAccelCtx, AVPacket* videoPacket) {
+//    CMSampleBufferRef sampleBuffer = NULL;
+    CMBlockBufferRef blockBuffer = NULL;
+    
+    if (!hwAccelCtx->is_avc) {
+        H2645Packet pkt = { 0 };
+        int i, ret = 0;
+        
+        ret = ff_h2645_packet_split(&pkt, videoPacket->data, videoPacket->size, NULL, hwAccelCtx->is_avc, 2, AV_CODEC_ID_H264, 1);
+        if (ret < 0) {
+            ret = 0;
+        }
+        
+        for (int i = 0; i < pkt.nb_nals; ++i) {
+            switch (pkt.nals[i].type) {
+                case H264_NAL_IDR_SLICE:
+                case H264_NAL_SLICE:
+                {
+                    uint8_t* raw_data = (uint8_t*)pkt.nals[i].raw_data - 4;
+                    size_t raw_size = pkt.nals[i].raw_size + 4;
+                    AV_WB32(raw_data, raw_size - 4);
+                    if (CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, raw_data, raw_size, kCFAllocatorNull, NULL, 0, raw_size, 0, &blockBuffer) != noErr) {
+                        return NULL;
+                    }
+                }
+                    break;
+                default:
+                    NBLOG_INFO(LOG_TAG, "The nal type is : %d", pkt.nals[i].type);
+                    break;
+            }
+        }
+        
+        ff_h2645_packet_uninit(&pkt);
+    } else {
+        const size_t sampleSize = videoPacket->size;
+        
+        if (CMBlockBufferCreateWithMemoryBlock(NULL, videoPacket->data, videoPacket->size, kCFAllocatorNull, NULL, 0, videoPacket->size, 0, &blockBuffer) != noErr) {
+            return NULL;
+        }
+    }
+    
+    return blockBuffer;
 }
 
-static void DictSetI32(CFMutableDictionaryRef dict, CFStringRef key, int32_t value) {
-    CFNumberRef number;
-    number = CFNumberCreate(NULL, kCFNumberSInt32Type, &value);
-    CFDictionarySetValue(dict, key, number);
-    CFRelease(number);
-}
-
-static CMFormatDescriptionRef CreateFormatDescriptionFromCodecData(uint32_t format_id, int width, int height, AVCodecContext* codecCtx, uint32_t atom) {
+CMFormatDescriptionRef NBVideoToolboxDecoder::CreateFormatDescriptionFromCodecData(uint32_t format_id, int width, int height, AVCodecContext* codecCtx, uint32_t atom) {
     CMFormatDescriptionRef fmt_desc = NULL;
     OSStatus status;
     
@@ -129,7 +180,13 @@ static CMFormatDescriptionRef CreateFormatDescriptionFromCodecData(uint32_t form
     DictSetI32(par, CFSTR ("VerticalSpacing"), 0);
     
     /* SampleDescriptionExtensionAtoms dict */
-    DictSetData(atoms, CFSTR ("avcC"), codecCtx);
+    CFDataRef data;
+    //    data = CFDataCreate(NULL, value, (CFIndex)length);
+    data = ff_videotoolbox_avcc_extradata_create(codecCtx);
+    mHWAccelCtx->encapsulateFunc = H264EncapsulateSampleBuffer;
+    CFDictionarySetValue(atoms, CFSTR ("avcC"), data);
+    CFRelease(data);
+//    DictSetData(atoms, CFSTR ("avcC"), codecCtx);
     
     /* Extensions dict */
     DictSetString(extensions, CFSTR ("CVImageBufferChromaLocationBottomField"), "left");
@@ -183,9 +240,9 @@ void NBVideoToolboxDecoder::DecompressionSessionCallback(void *decompressionOutp
 NBVideoToolboxDecoder::NBVideoToolboxDecoder(NBMediaSource* mediaTrack)
     :mMediaTrack(mediaTrack)
     ,mDecoderReorderPts(DRP_AUTO)
-    ,mVParser(NULL)
     ,mFormatDescription(NULL)
-    ,mDecompressSession(NULL) {
+    ,mDecompressSession(NULL)
+    ,mHWAccelCtx(NULL) {
     
 }
 
@@ -196,8 +253,9 @@ NBVideoToolboxDecoder::~NBVideoToolboxDecoder() {
 nb_status_t NBVideoToolboxDecoder::start(NBMetaData *params) {
     
     int ret;
-//    uint8_t* extraData = NULL;
-//    int extraDatasize = 0;
+    
+    mHWAccelCtx = new HWAccelCtx();
+    
     
     NBMetaData* videoMeta = mMediaTrack->getFormat();
     if(!videoMeta->findPointer(kKeyFFmpegStream, (void**)&mVStream)) {
@@ -218,12 +276,6 @@ nb_status_t NBVideoToolboxDecoder::start(NBMetaData *params) {
         return false;
     }
     av_codec_set_pkt_timebase(mVCodecCxt, mVStream->time_base);
-    
-    mVParser = av_parser_init(AV_CODEC_ID_H264);
-    
-//    uint8_t* fooBuffer;
-//    int fooBufferSize;
-//    av_parser_parse2(mVParser, mVCodecCxt, &fooBuffer, &fooBufferSize, mVCodecCxt->extradata, mVCodecCxt->extradata_size, 0, 0, -1);
     
     mFormatDescription = CreateFormatDescriptionFromCodecData(kCMVideoCodecType_H264,
                                                               mVStream->codecpar->width,
@@ -355,61 +407,17 @@ nb_status_t NBVideoToolboxDecoder::read(
             frameTimingInfo.duration = CMTimeMake(videoPacket->duration * mVStream->time_base.num, mVStream->time_base.den);
             frameTimingInfo.presentationTimeStamp = CMTimeMake(videoPacket->pts * mVStream->time_base.num, mVStream->time_base.den);
             
-            if (!is_avc) {
-                H2645Packet pkt = { 0 };
-                int i, ret = 0;
-
-                ret = ff_h2645_packet_split(&pkt, videoPacket->data, videoPacket->size, mVCodecCxt, is_avc, 2, AV_CODEC_ID_H264, 1);
-                if (ret < 0) {
-                    ret = 0;
-                }
-                
-                for (int i = 0; i < pkt.nb_nals; ++i) {
-                    switch (pkt.nals[i].type) {
-                        case H264_NAL_IDR_SLICE:
-                        case H264_NAL_SLICE:
-                        {
-                            uint8_t* raw_data = (uint8_t*)pkt.nals[i].raw_data - 4;
-                            size_t raw_size = pkt.nals[i].raw_size + 4;
-                            AV_WB32(raw_data, raw_size - 4);
-                            if (CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, raw_data, raw_size, kCFAllocatorNull, NULL, 0, raw_size, 0, &blockBuffer) != noErr) {
-                                return UNKNOWN_ERROR;
-                            }
-                            
-//                            status = CMSampleBufferCreate(kCFAllocatorDefault,  // allocator
-//                                                          block_buf,            // dataBuffer
-//                                                          TRUE,                 // dataReady
-//                                                          0,                    // makeDataReadyCallback
-//                                                          0,                    // makeDataReadyRefcon
-//                                                          fmt_desc,             // formatDescription
-//                                                          1,                    // numSamples
-//                                                          0,                    // numSampleTimingEntries
-//                                                          NULL,                 // sampleTimingArray
-//                                                          0,                    // numSampleSizeEntries
-//                                                          NULL,                 // sampleSizeArray
-//                                                          &sample_buf);
-                            
-                            if (CMSampleBufferCreate(kCFAllocatorDefault, blockBuffer, true, NULL, NULL, mFormatDescription, 1, 1, &frameTimingInfo, 1, &raw_size, &sampleBuffer) != noErr) {
-                                NBLOG_ERROR(LOG_TAG, "erroe when create samplebuffer\n");
-                            }
-                        }
-                            break;
-                        default:
-                            NBLOG_INFO(LOG_TAG, "The nal type is : %d", pkt.nals[i].type);
-                            break;
-                    }
-                }
-                
-                ff_h2645_packet_uninit(&pkt);
-            } else {
-                const size_t sampleSize = videoPacket->size;
-                
-                if (CMBlockBufferCreateWithMemoryBlock(NULL, videoPacket->data, videoPacket->size, kCFAllocatorNull, NULL, 0, videoPacket->size, 0, &blockBuffer) != noErr) {
-                    return UNKNOWN_ERROR;
-                }
-                if (CMSampleBufferCreate(kCFAllocatorDefault, blockBuffer, true, NULL, NULL, mFormatDescription, 1, 1, &frameTimingInfo, 1, &sampleSize, &sampleBuffer) != noErr) {
-                    NBLOG_ERROR(LOG_TAG, "erroe when create samplebuffer\n");
-                }
+            if (mHWAccelCtx->encapsulateFunc != NULL) {
+                blockBuffer = mHWAccelCtx->encapsulateFunc(mHWAccelCtx, videoPacket);
+            }
+            
+//            if (CMSampleBufferCreate(kCFAllocatorDefault, blockBuffer, true, NULL, NULL, mFormatDescription, 1, 1, &frameTimingInfo, 1, &raw_size, &sampleBuffer) != noErr) {
+//                NBLOG_ERROR(LOG_TAG, "erroe when create samplebuffer\n");
+//            }
+            
+            size_t bufferLen = CMBlockBufferGetDataLength(blockBuffer);
+            if (CMSampleBufferCreate(kCFAllocatorDefault, blockBuffer, true, NULL, NULL, mFormatDescription, 1, 1, &frameTimingInfo, 1, &bufferLen, &sampleBuffer) != noErr) {
+                NBLOG_ERROR(LOG_TAG, "erroe when create samplebuffer\n");
             }
             
             //Insert this item to sorted queue
@@ -475,9 +483,4 @@ nb_status_t NBVideoToolboxDecoder::read(
     }
     
     return OK;
-}
-
-bool NBVideoToolboxDecoder::openVideoCodecContext(AVCodecParameters* codecpar) {
-    
-    return true;
 }
