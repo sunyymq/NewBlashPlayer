@@ -70,12 +70,16 @@ extern const URLProtocol ff_librtmpt_protocol;
 extern const URLProtocol ff_librtmpte_protocol;
 extern const URLProtocol ff_libssh_protocol;
 extern const URLProtocol ff_libsmbclient_protocol;
+extern const URLProtocol ff_zipfile_protocol;
 
 //#include "libavformat/protocol_list.c"
 static const URLProtocol * const url_protocols[] = {
     &ff_file_protocol,
     &ff_tcp_protocol,
     &ff_rtp_protocol,
+#ifdef CONFIG_ZIPFILE_PROTOCOL
+    &ff_zipfile_protocol,
+#endif
     NULL
 };
 
