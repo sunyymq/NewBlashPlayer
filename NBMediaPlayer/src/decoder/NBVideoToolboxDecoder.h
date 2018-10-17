@@ -112,6 +112,7 @@ private:
 private:
     CMFormatDescriptionRef CreateFormatDescriptionFromCodecData(CMVideoCodecType codec_type, int width, int height, AVCodecContext* codecCtx, uint32_t atom);
     CFDataRef ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx);
+    CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx);
     
 private:
     NBMetaData mMetaData;

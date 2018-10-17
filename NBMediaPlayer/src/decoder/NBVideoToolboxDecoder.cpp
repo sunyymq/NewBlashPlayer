@@ -21,6 +21,7 @@ extern "C"
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/h264_parse.h>
+#include <libavcodec/hevc_parse.h>
 #include <libavcodec/h2645_parse.h>
 #include <libavcodec/bytestream.h>
 #include <libavutil/intreadwrite.h>
@@ -42,6 +43,8 @@ struct HWAccelCtx {
     int is_avc;
     CMVideoCodecType cm_codec_type;
     H264ParamSets h264ps;
+    HEVCParamSets hevcps;
+    HEVCSEIContext hevcsei;
     EncapsulateSampleBuffer encapsulateFunc;
 };
 
@@ -137,7 +140,7 @@ CMBlockBufferRef H264EncapsulateSampleBuffer(HWAccelCtx* hwAccelCtx, AVPacket* v
             ret = 0;
         }
         
-        for (int i = 0; i < pkt.nb_nals; ++i) {
+        for (i = 0; i < pkt.nb_nals; ++i) {
             switch (pkt.nals[i].type) {
                 case H264_NAL_IDR_SLICE:
                 case H264_NAL_SLICE:
@@ -251,6 +254,229 @@ CMBlockBufferRef Mpeg4EncapsulateSampleBuffer(HWAccelCtx* hwAccelCtx, AVPacket* 
 
 /* --------------------- mpeg4 end ----------------------- */
 
+/* --------------------- hevc begin ----------------------- */
+CFDataRef NBVideoToolboxDecoder::ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
+{
+    CFDataRef data = NULL;
+    int nal_length_size = 0;
+    ff_hevc_decode_extradata(avctx->extradata, avctx->extradata_size, &mHWAccelCtx->hevcps, &mHWAccelCtx->hevcsei, &mHWAccelCtx->is_avc, &nal_length_size, 0, 1, avctx);
+    
+    if (mHWAccelCtx->is_avc) {
+        data = CFDataCreate(kCFAllocatorDefault, avctx->extradata, avctx->extradata_size);
+    } else {
+        const HEVCVPS *vps = (const HEVCVPS *)mHWAccelCtx->hevcps.vps_list[0]->data;
+        const HEVCSPS *sps = (const HEVCSPS *)mHWAccelCtx->hevcps.sps_list[0]->data;
+        int i, num_pps = 0;
+        const HEVCPPS *pps = (const HEVCPPS*)mHWAccelCtx->hevcps.pps_list[0]->data;
+        PTLCommon ptlc = vps->ptl.general_ptl;
+        VUI vui = sps->vui;
+        uint8_t parallelismType;
+        uint8_t *p;
+        int vt_extradata_size = 23 + 5 + vps->data_size + 5 + sps->data_size + 3;
+        uint8_t *vt_extradata;
+
+        for (i = 0; i < MAX_PPS_COUNT; i++) {
+            if (mHWAccelCtx->hevcps.pps_list[i]) {
+                const HEVCPPS *pps = (const HEVCPPS *)mHWAccelCtx->hevcps.pps_list[i]->data;
+                vt_extradata_size += 2 + pps->data_size;
+                num_pps++;
+            }
+        }
+
+        vt_extradata = (uint8_t*)av_malloc(vt_extradata_size);
+        if (!vt_extradata)
+            return NULL;
+        p = vt_extradata;
+
+        /* unsigned int(8) configurationVersion = 1; */
+        AV_W8(p + 0, 1);
+
+        /*
+         * unsigned int(2) general_profile_space;
+         * unsigned int(1) general_tier_flag;
+         * unsigned int(5) general_profile_idc;
+         */
+        AV_W8(p + 1, ptlc.profile_space << 6 |
+              ptlc.tier_flag     << 5 |
+              ptlc.profile_idc);
+
+        /* unsigned int(32) general_profile_compatibility_flags; */
+        memcpy(p + 2, ptlc.profile_compatibility_flag, 4);
+
+        /* unsigned int(48) general_constraint_indicator_flags; */
+        AV_W8(p + 6, ptlc.progressive_source_flag    << 7 |
+              ptlc.interlaced_source_flag     << 6 |
+              ptlc.non_packed_constraint_flag << 5 |
+              ptlc.frame_only_constraint_flag << 4);
+        AV_W8(p + 7, 0);
+        AV_WN32(p + 8, 0);
+
+        /* unsigned int(8) general_level_idc; */
+        AV_W8(p + 12, ptlc.level_idc);
+
+        /*
+         * bit(4) reserved = ‘1111’b;
+         * unsigned int(12) min_spatial_segmentation_idc;
+         */
+        AV_W8(p + 13, 0xf0 | (vui.min_spatial_segmentation_idc >> 4));
+        AV_W8(p + 14, vui.min_spatial_segmentation_idc & 0xff);
+
+        /*
+         * bit(6) reserved = ‘111111’b;
+         * unsigned int(2) parallelismType;
+         */
+        if (!vui.min_spatial_segmentation_idc)
+            parallelismType = 0;
+        else if (pps->entropy_coding_sync_enabled_flag && pps->tiles_enabled_flag)
+            parallelismType = 0;
+        else if (pps->entropy_coding_sync_enabled_flag)
+            parallelismType = 3;
+        else if (pps->tiles_enabled_flag)
+            parallelismType = 2;
+        else
+            parallelismType = 1;
+        AV_W8(p + 15, 0xfc | parallelismType);
+
+        /*
+         * bit(6) reserved = ‘111111’b;
+         * unsigned int(2) chromaFormat;
+         */
+        AV_W8(p + 16, sps->chroma_format_idc | 0xfc);
+
+        /*
+         * bit(5) reserved = ‘11111’b;
+         * unsigned int(3) bitDepthLumaMinus8;
+         */
+        AV_W8(p + 17, (sps->bit_depth - 8) | 0xfc);
+
+        /*
+         * bit(5) reserved = ‘11111’b;
+         * unsigned int(3) bitDepthChromaMinus8;
+         */
+        AV_W8(p + 18, (sps->bit_depth_chroma - 8) | 0xfc);
+
+        /* bit(16) avgFrameRate; */
+        AV_WB16(p + 19, 0);
+
+        /*
+         * bit(2) constantFrameRate;
+         * bit(3) numTemporalLayers;
+         * bit(1) temporalIdNested;
+         * unsigned int(2) lengthSizeMinusOne;
+         */
+        AV_W8(p + 21, 0                             << 6 |
+              sps->max_sub_layers           << 3 |
+              sps->temporal_id_nesting_flag << 2 |
+              3);
+
+        /* unsigned int(8) numOfArrays; */
+        AV_W8(p + 22, 3);
+
+        p += 23;
+        /* vps */
+        /*
+         * bit(1) array_completeness;
+         * unsigned int(1) reserved = 0;
+         * unsigned int(6) NAL_unit_type;
+         */
+        AV_W8(p, 1 << 7 |
+              HEVC_NAL_VPS & 0x3f);
+        /* unsigned int(16) numNalus; */
+        AV_WB16(p + 1, 1);
+        /* unsigned int(16) nalUnitLength; */
+        AV_WB16(p + 3, vps->data_size);
+        /* bit(8*nalUnitLength) nalUnit; */
+        memcpy(p + 5, vps->data, vps->data_size);
+        p += 5 + vps->data_size;
+
+        /* sps */
+        AV_W8(p, 1 << 7 |
+              HEVC_NAL_SPS & 0x3f);
+        AV_WB16(p + 1, 1);
+        AV_WB16(p + 3, sps->data_size);
+        memcpy(p + 5, sps->data, sps->data_size);
+        p += 5 + sps->data_size;
+
+        /* pps */
+        AV_W8(p, 1 << 7 |
+              HEVC_NAL_PPS & 0x3f);
+        AV_WB16(p + 1, num_pps);
+        p += 3;
+        for (i = 0; i < MAX_PPS_COUNT; i++) {
+            if (mHWAccelCtx->hevcps.pps_list[i]) {
+                const HEVCPPS *pps = (const HEVCPPS *)mHWAccelCtx->hevcps.pps_list[i]->data;
+                AV_WB16(p, pps->data_size);
+                memcpy(p + 2, pps->data, pps->data_size);
+                p += 2 + pps->data_size;
+            }
+        }
+
+        av_assert0(p - vt_extradata == vt_extradata_size);
+
+        data = CFDataCreate(kCFAllocatorDefault, vt_extradata, vt_extradata_size);
+        av_free(vt_extradata);
+    }
+    return data;
+}
+
+CMBlockBufferRef HevcEncapsulateSampleBuffer(HWAccelCtx* hwAccelCtx, AVPacket* videoPacket) {
+    CMBlockBufferRef blockBuffer = NULL;
+    
+    if (!hwAccelCtx->is_avc) {
+        H2645Packet pkt = { 0 };
+        int i, ret = 0;
+        
+        ret = ff_h2645_packet_split(&pkt, videoPacket->data, videoPacket->size, NULL, hwAccelCtx->is_avc, 2, AV_CODEC_ID_H264, 1);
+        if (ret < 0) {
+            ret = 0;
+        }
+        for (i = 0; i < pkt.nb_nals; ++i) {
+            switch (pkt.nals[i].type) {
+                case HEVC_NAL_TRAIL_R:
+                case HEVC_NAL_TRAIL_N:
+                case HEVC_NAL_TSA_N:
+                case HEVC_NAL_TSA_R:
+                case HEVC_NAL_STSA_N:
+                case HEVC_NAL_STSA_R:
+                case HEVC_NAL_BLA_W_LP:
+                case HEVC_NAL_BLA_W_RADL:
+                case HEVC_NAL_BLA_N_LP:
+                case HEVC_NAL_IDR_W_RADL:
+                case HEVC_NAL_IDR_N_LP:
+                case HEVC_NAL_CRA_NUT:
+                case HEVC_NAL_RADL_N:
+                case HEVC_NAL_RADL_R:
+                case HEVC_NAL_RASL_N:
+                case HEVC_NAL_RASL_R:
+                {
+                    uint8_t* raw_data = (uint8_t*)pkt.nals[i].raw_data - 4;
+                    size_t raw_size = pkt.nals[i].raw_size + 4;
+                    AV_WB32(raw_data, raw_size - 4);
+                    if (CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, raw_data, raw_size, kCFAllocatorNull, NULL, 0, raw_size, 0, &blockBuffer) != noErr) {
+                        return NULL;
+                    }
+                }
+                    break;
+                default:
+                    NBLOG_INFO(LOG_TAG, "The nal type is : %d", pkt.nals[i].type);
+                    break;
+            }
+        }
+        
+        ff_h2645_packet_uninit(&pkt);
+    } else {
+        const size_t sampleSize = videoPacket->size;
+        
+        if (CMBlockBufferCreateWithMemoryBlock(NULL, videoPacket->data, videoPacket->size, kCFAllocatorNull, NULL, 0, videoPacket->size, 0, &blockBuffer) != noErr) {
+            return NULL;
+        }
+    }
+    
+    return blockBuffer;
+}
+
+/* --------------------- hevc end ----------------------- */
+
 CMFormatDescriptionRef NBVideoToolboxDecoder::CreateFormatDescriptionFromCodecData(CMVideoCodecType codec_type, int width, int height, AVCodecContext* codecCtx, uint32_t atom) {
     CMFormatDescriptionRef fmt_desc = NULL;
     OSStatus status;
@@ -278,11 +504,12 @@ CMFormatDescriptionRef NBVideoToolboxDecoder::CreateFormatDescriptionFromCodecDa
                 CFDictionarySetValue(atoms, CFSTR("avcC"), data);
             mHWAccelCtx->encapsulateFunc = H264EncapsulateSampleBuffer;
             break;
-//        case kCMVideoCodecType_HEVC :
-//            data = ff_videotoolbox_hvcc_extradata_create(avctx);
-//            if (data)
-//                CFDictionarySetValue(atoms, CFSTR("hvcC"), data);
-//            break;
+        case kCMVideoCodecType_HEVC :
+            data = ff_videotoolbox_hvcc_extradata_create(codecCtx);
+            if (data)
+                CFDictionarySetValue(atoms, CFSTR("hvcC"), data);
+            mHWAccelCtx->encapsulateFunc = HevcEncapsulateSampleBuffer;
+            break;
         default:
             break;
     }
@@ -341,7 +568,7 @@ void NBVideoToolboxDecoder::DecompressionSessionCallback(void *decompressionOutp
         }
     }
     
-    NBLOG_DEBUG(LOG_TAG, "DecompressionSessionCallback pts : %lld status : %d infoFlags : %d", pts, status, infoFlags);
+//    NBLOG_DEBUG(LOG_TAG, "DecompressionSessionCallback pts : %lld status : %d infoFlags : %d", pts, status, infoFlags);
 }
 
 NBVideoToolboxDecoder::NBVideoToolboxDecoder(NBMediaSource* mediaTrack)
@@ -539,10 +766,6 @@ nb_status_t NBVideoToolboxDecoder::read(
             if (mHWAccelCtx->encapsulateFunc != NULL) {
                 blockBuffer = mHWAccelCtx->encapsulateFunc(mHWAccelCtx, videoPacket);
             }
-            
-//            if (CMSampleBufferCreate(kCFAllocatorDefault, blockBuffer, true, NULL, NULL, mFormatDescription, 1, 1, &frameTimingInfo, 1, &raw_size, &sampleBuffer) != noErr) {
-//                NBLOG_ERROR(LOG_TAG, "erroe when create samplebuffer\n");
-//            }
             
             size_t bufferLen = CMBlockBufferGetDataLength(blockBuffer);
             if (CMSampleBufferCreate(kCFAllocatorDefault, blockBuffer, true, NULL, NULL, mFormatDescription, 1, 1, &frameTimingInfo, 1, &bufferLen, &sampleBuffer) != noErr) {

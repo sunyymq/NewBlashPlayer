@@ -77,6 +77,8 @@
 		FAA7DF2C2177044A00D021AB /* stat.c in Sources */ = {isa = PBXBuildFile; fileRef = FAA7DF1A2177044900D021AB /* stat.c */; };
 		FAA7DF2D2177044A00D021AB /* write.c in Sources */ = {isa = PBXBuildFile; fileRef = FAA7DF1D2177044900D021AB /* write.c */; };
 		FAA7DF2E2177044A00D021AB /* zip.c in Sources */ = {isa = PBXBuildFile; fileRef = FAA7DF1F2177044900D021AB /* zip.c */; };
+		FAA7DF302177833B00D021AB /* hevc_parse.c in Sources */ = {isa = PBXBuildFile; fileRef = FAA7DF2F2177833A00D021AB /* hevc_parse.c */; };
+		FAA7DF35217783D800D021AB /* hevc_ps.c in Sources */ = {isa = PBXBuildFile; fileRef = FAA7DF33217783D800D021AB /* hevc_ps.c */; };
 		FAF61DE7216F1C1B00C85F54 /* rtp.c in Sources */ = {isa = PBXBuildFile; fileRef = FAF61DB5216F1C1400C85F54 /* rtp.c */; };
 		FAF61DE8216F1C1B00C85F54 /* rtpdec_dv.c in Sources */ = {isa = PBXBuildFile; fileRef = FAF61DBB216F1C1500C85F54 /* rtpdec_dv.c */; };
 		FAF61DE9216F1C1B00C85F54 /* rtpdec_xiph.c in Sources */ = {isa = PBXBuildFile; fileRef = FAF61DBC216F1C1500C85F54 /* rtpdec_xiph.c */; };
@@ -365,6 +367,11 @@
 		FAA7DF202177044900D021AB /* zzip.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = zzip.h; sourceTree = "<group>"; };
 		FAA7DF212177044900D021AB /* zzip32.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = zzip32.h; sourceTree = "<group>"; };
 		FAA7DF222177044900D021AB /* zziplib.wpj */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = zziplib.wpj; sourceTree = "<group>"; };
+		FAA7DF2F2177833A00D021AB /* hevc_parse.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = hevc_parse.c; sourceTree = "<group>"; };
+		FAA7DF31217783D700D021AB /* mpeg4video.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mpeg4video.h; sourceTree = "<group>"; };
+		FAA7DF32217783D800D021AB /* profiles.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = profiles.h; sourceTree = "<group>"; };
+		FAA7DF33217783D800D021AB /* hevc_ps.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = hevc_ps.c; sourceTree = "<group>"; };
+		FAA7DF34217783D800D021AB /* vdpau_compat.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = vdpau_compat.h; sourceTree = "<group>"; };
 		FAF61DB5216F1C1400C85F54 /* rtp.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rtp.c; sourceTree = "<group>"; };
 		FAF61DBA216F1C1500C85F54 /* rtp.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = rtp.h; sourceTree = "<group>"; };
 		FAF61DBB216F1C1500C85F54 /* rtpdec_dv.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rtpdec_dv.c; sourceTree = "<group>"; };
@@ -740,6 +747,11 @@
 		FA47395C216F4ACC0006034B /* libavcodec */ = {
 			isa = PBXGroup;
 			children = (
+				FAA7DF33217783D800D021AB /* hevc_ps.c */,
+				FAA7DF31217783D700D021AB /* mpeg4video.h */,
+				FAA7DF32217783D800D021AB /* profiles.h */,
+				FAA7DF34217783D800D021AB /* vdpau_compat.h */,
+				FAA7DF2F2177833A00D021AB /* hevc_parse.c */,
 				FA4739B22170F9E30006034B /* cabac_functions.h */,
 				FA4739B32170F9E30006034B /* decode.h */,
 				FA4739B12170F9E20006034B /* h264_mvpred.h */,
@@ -1054,6 +1066,7 @@
 				FAA7DF2E2177044A00D021AB /* zip.c in Sources */,
 				FAF61DEB216F1C1B00C85F54 /* rtpdec_amr.c in Sources */,
 				FA96900D215DE39F00F77705 /* DESocketHelper.cpp in Sources */,
+				FAA7DF302177833B00D021AB /* hevc_parse.c in Sources */,
 				FA08D33E214FC75D0003E97E /* NBClockManager.cpp in Sources */,
 				FAF61DFB216F1C1B00C85F54 /* rtpdec_mpegts.c in Sources */,
 				FA08D337214FC75D0003E97E /* NBSharedBuffer.cpp in Sources */,
@@ -1104,6 +1117,7 @@
 				FAF61DEF216F1C1B00C85F54 /* http.c in Sources */,
 				FAA7DF2D2177044A00D021AB /* write.c in Sources */,
 				FA08D344214FC75D0003E97E /* NBGLVideoRenderer.cpp in Sources */,
+				FAA7DF35217783D800D021AB /* hevc_ps.c in Sources */,
 				FAF61E07216F1C1B00C85F54 /* srtp.c in Sources */,
 				FAF61DF7216F1C1B00C85F54 /* rtpdec_h263_rfc2190.c in Sources */,
 				FA32EF17216F131E00F5C8FF /* avio.c in Sources */,
