@@ -172,7 +172,10 @@ nb_status_t NBFFmpegVDecoder::stop() {
     }
     
     av_frame_free(&mScaledFrame);
-    av_frame_free(&mDecodedFrame);
+    if (mVCodecCxt->pix_fmt != AV_PIX_FMT_YUV420P
+        && mVCodecCxt->pix_fmt != AV_PIX_FMT_YUVJ420P) {
+        av_frame_free(&mDecodedFrame);
+    }
 
     if (mCachedBuffer != NULL) {
         delete mCachedBuffer;
