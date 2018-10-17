@@ -59,7 +59,8 @@ NBMediaSource* NBMediaDecoder::Create(NBMetaData* metaData, NBMediaSource* media
                 ret = new NBFFmpegVDecoder(mediaTrack);
             }
 #elif BUILD_TARGET_IOS
-            if (videoCodecPar->codec_id == AV_CODEC_ID_H264) {
+            if (videoCodecPar->codec_id == AV_CODEC_ID_H264
+                || videoCodecPar->codec_id == AV_CODEC_ID_MPEG4) {
                 ret = new NBVideoToolboxDecoder(mediaTrack);
             } else {
                 ret = new NBFFmpegVDecoder(mediaTrack);

@@ -22,8 +22,9 @@ extern "C"
 #include <libavformat/avformat.h>
 #include <libavcodec/h264_parse.h>
 #include <libavcodec/h2645_parse.h>
+#include <libavcodec/bytestream.h>
 #include <libavutil/intreadwrite.h>
-    
+
 #ifdef __cplusplus
 }
 #endif
@@ -39,9 +40,8 @@ typedef CMBlockBufferRef (*EncapsulateSampleBuffer)(HWAccelCtx* hwAccelCtx, AVPa
 
 struct HWAccelCtx {
     int is_avc;
-    union {
-        H264ParamSets h264ps;
-    };
+    CMVideoCodecType cm_codec_type;
+    H264ParamSets h264ps;
     EncapsulateSampleBuffer encapsulateFunc;
 };
 
@@ -77,6 +77,7 @@ static void DictSetI32(CFMutableDictionaryRef dict, CFStringRef key, int32_t val
 
 #define AV_W8(p, v) *(p) = (v)
 
+/* --------------------- h264 begin ----------------------- */
 CFDataRef NBVideoToolboxDecoder::ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx)
 {
     int nal_length_size = 0;
@@ -166,8 +167,91 @@ CMBlockBufferRef H264EncapsulateSampleBuffer(HWAccelCtx* hwAccelCtx, AVPacket* v
     
     return blockBuffer;
 }
+/* --------------------- h264 end ----------------------- */
 
-CMFormatDescriptionRef NBVideoToolboxDecoder::CreateFormatDescriptionFromCodecData(uint32_t format_id, int width, int height, AVCodecContext* codecCtx, uint32_t atom) {
+/* --------------------- mpeg4 begin ----------------------- */
+#define VIDEOTOOLBOX_ESDS_EXTRADATA_PADDING  12
+
+static void videotoolbox_write_mp4_descr_length(PutByteContext *pb, int length)
+{
+    int i;
+    uint8_t b;
+    
+    for (i = 3; i >= 0; i--) {
+        b = (length >> (i * 7)) & 0x7F;
+        if (i != 0)
+            b |= 0x80;
+        
+        bytestream2_put_byteu(pb, b);
+    }
+}
+
+static CFDataRef videotoolbox_esds_extradata_create(AVCodecContext *avctx)
+{
+    CFDataRef data;
+    uint8_t *rw_extradata;
+    PutByteContext pb;
+    int full_size = 3 + 5 + 13 + 5 + avctx->extradata_size + 3;
+    // ES_DescrTag data + DecoderConfigDescrTag + data + DecSpecificInfoTag + size + SLConfigDescriptor
+    int config_size = 13 + 5 + avctx->extradata_size;
+    int s;
+    
+    if (!(rw_extradata = (uint8_t*)av_mallocz(full_size + VIDEOTOOLBOX_ESDS_EXTRADATA_PADDING)))
+        return NULL;
+    
+    bytestream2_init_writer(&pb, rw_extradata, full_size + VIDEOTOOLBOX_ESDS_EXTRADATA_PADDING);
+    bytestream2_put_byteu(&pb, 0);        // version
+    bytestream2_put_ne24(&pb, 0);         // flags
+    
+    // elementary stream descriptor
+    bytestream2_put_byteu(&pb, 0x03);     // ES_DescrTag
+    videotoolbox_write_mp4_descr_length(&pb, full_size);
+    bytestream2_put_ne16(&pb, 0);         // esid
+    bytestream2_put_byteu(&pb, 0);        // stream priority (0-32)
+    
+    // decoder configuration descriptor
+    bytestream2_put_byteu(&pb, 0x04);     // DecoderConfigDescrTag
+    videotoolbox_write_mp4_descr_length(&pb, config_size);
+    bytestream2_put_byteu(&pb, 32);       // object type indication. 32 = AV_CODEC_ID_MPEG4
+    bytestream2_put_byteu(&pb, 0x11);     // stream type
+    bytestream2_put_ne24(&pb, 0);         // buffer size
+    bytestream2_put_ne32(&pb, 0);         // max bitrate
+    bytestream2_put_ne32(&pb, 0);         // avg bitrate
+    
+    // decoder specific descriptor
+    bytestream2_put_byteu(&pb, 0x05);     ///< DecSpecificInfoTag
+    videotoolbox_write_mp4_descr_length(&pb, avctx->extradata_size);
+    
+    bytestream2_put_buffer(&pb, avctx->extradata, avctx->extradata_size);
+    
+    // SLConfigDescriptor
+    bytestream2_put_byteu(&pb, 0x06);     // SLConfigDescrTag
+    bytestream2_put_byteu(&pb, 0x01);     // length
+    bytestream2_put_byteu(&pb, 0x02);     //
+    
+    s = bytestream2_size_p(&pb);
+    
+    data = CFDataCreate(kCFAllocatorDefault, rw_extradata, s);
+    
+    av_freep(&rw_extradata);
+    return data;
+}
+
+CMBlockBufferRef Mpeg4EncapsulateSampleBuffer(HWAccelCtx* hwAccelCtx, AVPacket* videoPacket) {
+    CMBlockBufferRef blockBuffer = NULL;
+    
+    const size_t sampleSize = videoPacket->size;
+    
+    if (CMBlockBufferCreateWithMemoryBlock(NULL, videoPacket->data, videoPacket->size, kCFAllocatorNull, NULL, 0, videoPacket->size, 0, &blockBuffer) != noErr) {
+        return NULL;
+    }
+    
+    return blockBuffer;
+}
+
+/* --------------------- mpeg4 end ----------------------- */
+
+CMFormatDescriptionRef NBVideoToolboxDecoder::CreateFormatDescriptionFromCodecData(CMVideoCodecType codec_type, int width, int height, AVCodecContext* codecCtx, uint32_t atom) {
     CMFormatDescriptionRef fmt_desc = NULL;
     OSStatus status;
     
@@ -181,11 +265,34 @@ CMFormatDescriptionRef NBVideoToolboxDecoder::CreateFormatDescriptionFromCodecDa
     
     /* SampleDescriptionExtensionAtoms dict */
     CFDataRef data;
-    //    data = CFDataCreate(NULL, value, (CFIndex)length);
-    data = ff_videotoolbox_avcc_extradata_create(codecCtx);
-    mHWAccelCtx->encapsulateFunc = H264EncapsulateSampleBuffer;
-    CFDictionarySetValue(atoms, CFSTR ("avcC"), data);
+    switch (codec_type) {
+        case kCMVideoCodecType_MPEG4Video :
+            data = videotoolbox_esds_extradata_create(codecCtx);
+            if (data)
+                CFDictionarySetValue(atoms, CFSTR("esds"), data);
+            mHWAccelCtx->encapsulateFunc = Mpeg4EncapsulateSampleBuffer;
+            break;
+        case kCMVideoCodecType_H264 :
+            data = ff_videotoolbox_avcc_extradata_create(codecCtx);
+            if (data)
+                CFDictionarySetValue(atoms, CFSTR("avcC"), data);
+            mHWAccelCtx->encapsulateFunc = H264EncapsulateSampleBuffer;
+            break;
+//        case kCMVideoCodecType_HEVC :
+//            data = ff_videotoolbox_hvcc_extradata_create(avctx);
+//            if (data)
+//                CFDictionarySetValue(atoms, CFSTR("hvcC"), data);
+//            break;
+        default:
+            break;
+    }
     CFRelease(data);
+    
+//    //    data = CFDataCreate(NULL, value, (CFIndex)length);
+//    data = ff_videotoolbox_avcc_extradata_create(codecCtx);
+//    mHWAccelCtx->encapsulateFunc = H264EncapsulateSampleBuffer;
+//    CFDictionarySetValue(atoms, CFSTR ("avcC"), data);
+//    CFRelease(data);
 //    DictSetData(atoms, CFSTR ("avcC"), codecCtx);
     
     /* Extensions dict */
@@ -194,9 +301,9 @@ CMFormatDescriptionRef NBVideoToolboxDecoder::CreateFormatDescriptionFromCodecDa
     DictSetBoolean(extensions, CFSTR("FullRangeVideo"), FALSE);
     DictSetObject(extensions, CFSTR ("CVPixelAspectRatio"), (CFTypeRef *) par);
     
-    DictSetObject(extensions, CFSTR ("SampleDescriptionExtensionAtoms"), (CFTypeRef *) atoms);
+    DictSetObject(extensions, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms, (CFTypeRef *) atoms);
     
-    status = CMVideoFormatDescriptionCreate(NULL, format_id, width, height, extensions, &fmt_desc);
+    status = CMVideoFormatDescriptionCreate(NULL, codec_type, width, height, extensions, &fmt_desc);
     
     CFRelease(extensions);
     CFRelease(atoms);
@@ -234,7 +341,7 @@ void NBVideoToolboxDecoder::DecompressionSessionCallback(void *decompressionOutp
         }
     }
     
-//    NBLOG_DEBUG(LOG_TAG, "DecompressionSessionCallback pts : %lld status : %d infoFlags : %d", pts, status, infoFlags);
+    NBLOG_DEBUG(LOG_TAG, "DecompressionSessionCallback pts : %lld status : %d infoFlags : %d", pts, status, infoFlags);
 }
 
 NBVideoToolboxDecoder::NBVideoToolboxDecoder(NBMediaSource* mediaTrack)
@@ -256,7 +363,6 @@ nb_status_t NBVideoToolboxDecoder::start(NBMetaData *params) {
     
     mHWAccelCtx = new HWAccelCtx();
     
-    
     NBMetaData* videoMeta = mMediaTrack->getFormat();
     if(!videoMeta->findPointer(kKeyFFmpegStream, (void**)&mVStream)) {
         return UNKNOWN_ERROR;
@@ -277,7 +383,30 @@ nb_status_t NBVideoToolboxDecoder::start(NBMetaData *params) {
     }
     av_codec_set_pkt_timebase(mVCodecCxt, mVStream->time_base);
     
-    mFormatDescription = CreateFormatDescriptionFromCodecData(kCMVideoCodecType_H264,
+    switch( mVCodecCxt->codec_id ) {
+        case AV_CODEC_ID_H263 :
+            mHWAccelCtx->cm_codec_type = kCMVideoCodecType_H263;
+            break;
+        case AV_CODEC_ID_H264 :
+            mHWAccelCtx->cm_codec_type = kCMVideoCodecType_H264;
+            break;
+        case AV_CODEC_ID_HEVC :
+            mHWAccelCtx->cm_codec_type = kCMVideoCodecType_HEVC;
+            break;
+        case AV_CODEC_ID_MPEG1VIDEO :
+            mHWAccelCtx->cm_codec_type = kCMVideoCodecType_MPEG1Video;
+            break;
+        case AV_CODEC_ID_MPEG2VIDEO :
+            mHWAccelCtx->cm_codec_type = kCMVideoCodecType_MPEG2Video;
+            break;
+        case AV_CODEC_ID_MPEG4 :
+            mHWAccelCtx->cm_codec_type = kCMVideoCodecType_MPEG4Video;
+            break;
+        default :
+            break;
+    }
+    
+    mFormatDescription = CreateFormatDescriptionFromCodecData(mHWAccelCtx->cm_codec_type,
                                                               mVStream->codecpar->width,
                                                               mVStream->codecpar->height,
                                                               mVCodecCxt,
@@ -457,8 +586,8 @@ nb_status_t NBVideoToolboxDecoder::read(
             
 //            NBLOG_INFO(LOG_TAG, "The decode timestamp : %lld present timestamp : %lld mSortedCount : %d", dts, pts, mSortedCount);
         } else {
-//            //Wait for an async callback
-//            status = VTDecompressionSessionWaitForAsynchronousFrames(mDecompressSession);
+            //Wait for an async callback
+            status = VTDecompressionSessionWaitForAsynchronousFrames(mDecompressSession);
             
             SortedQueueItem* leastFrame = list_first_entry(&(mSortedHead), SortedQueueItem, list);
             if (leastFrame->frame.data[3] == NULL) {
